@@ -34,6 +34,7 @@ char *LoadInMemory(const char *pFileName)
 
 int main(int argc, char *argv[])
 {
+    // NOTE(Andrei): json examples here http://json-schema.org/
     char *pFileContent =  LoadInMemory("test.json");
     JS_TOKENIZER Tokenizer = { pFileContent };
 
@@ -41,8 +42,16 @@ int main(int argc, char *argv[])
     json_parser(pRootNode, &Tokenizer);
 
     json_sanitize(pRootNode);
-    json_clear(pRootNode);
+    int pArray[1] = { 1 };
 
+    char *s = json_value(pRootNode, "root.address.streetAddress");
+    int i = json_size(pRootNode, "root.phoneNumbers");
+
+    s = json_value(pRootNode, "root.phoneNumbers.type", pArray, 1);
+    s = json_value(pRootNode, "root.phoneNumbers.number", pArray, 1);
+
+    json_clear(pRootNode);
     free(pFileContent);
+
     return EXIT_SUCCESS;
 }

@@ -30,7 +30,7 @@ typedef struct JS_NODE
     char *Name;                 // NOTE(Andrei): Name of the field
     char *Value;                // NOTE(Andrei): In case is a data (not object or array) it will contain the data
 
-    int Size;                   // NOTE(Andrei): Size of the data and name, string is not null terminated [XXXX XXXX YYYY YYYY YYYY YYYY YYYY YYYY] X -> field size, Y -> data size
+    int Size;                   // NOTE(Andrei): Size of the data and name, string is not null terminated [XXXX XXXX YYYY YYYY YYYY YYYY YYYY YYYY] (X -> name size, Y -> value size)
     JS_TYPES Type;              // NOTE(Andrei): This tells us what king of node we deal with, basic type (string, bool, etc), object or array
 } JS_NODE;                      // NOTE(Andrei): json_sanitize sets null terminator to all strings
 
@@ -46,5 +46,8 @@ void json_sanitize(JS_NODE * pNode);
 void json_default(JS_NODE *pNode);
 
 JS_NODE * json_root();
+
+char * json_value(JS_NODE *pNode, char *pQuery, int *pArray = 0, int ArrayCount = 0);
+int json_size(JS_NODE *pNode, char *pQuery, int *pArray = 0, int ArrayCount = 0);
 
 #endif

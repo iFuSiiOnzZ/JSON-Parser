@@ -36,26 +36,22 @@ typedef struct queue_t      // NOTE(Andrei): This is used to store the current j
 
 inline bool IsEndOfLine(char C)
 {
-    bool l_bEndOfLine = (C == '\n') || (C == '\r');
-    return l_bEndOfLine;
+    return (C == '\n') || (C == '\r');
 }
 
 inline bool IsWhiteSpace(char C)
 {
-    bool l_bWhiteSPace = ((C == ' ') || (C == '\t') || (C == '\v') || (C == '\f') || IsEndOfLine(C));
-    return l_bWhiteSPace;
+    return ((C == ' ') || (C == '\t') || (C == '\v') || (C == '\f') || IsEndOfLine(C));
 }
 
 inline bool IsAlpha(char C)
 {
-    bool l_bAlpha = (((C >= 'a') && (C <= 'z')) || ((C >= 'A') && (C <= 'Z')));
-    return l_bAlpha;
+    return (((C >= 'a') && (C <= 'z')) || ((C >= 'A') && (C <= 'Z')));
 }
 
 inline bool IsNumber(char C)
 {
-    bool l_bIsNumeric = ((C >= '0') && (C <= '9'));
-    return l_bIsNumeric;
+    return ((C >= '0') && (C <= '9'));
 }
 
 inline void RemoveSpace(JS_TOKENIZER *pTokenizer)
@@ -97,7 +93,7 @@ static JS_TOKEN GetToken(JS_TOKENIZER *pTokenizer)
     return Token;
 }
 
-static void GetFieldName(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
+static void ParseFieldName(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
 {
     RemoveSpace(pTokenizer);
     pNode->Name = pTokenizer->At;
@@ -111,34 +107,7 @@ static void GetFieldName(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
     if(pTokenizer->At[0] == '"') ++pTokenizer->At;
 }
 
-static void ParseBool(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
-{
-    pNode->Value = (pTokenizer->At - 1);
-    pNode->Type = JS_BOOL;
-
-    RemoveSpace(pTokenizer);
-    while(pTokenizer->At[0] && pTokenizer->At[0] != ',' && pTokenizer->At[0] != ']' && pTokenizer->At[0] != '}' && !IsWhiteSpace(pTokenizer->At[0]))
-    {
-        ++pTokenizer->At;
-    }
-
-    json_set_data_size(pNode->Size, cast(int, pTokenizer->At - pNode->Value));
-}
-
-static void ParseNumber(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
-{
-    pNode->Value = (pTokenizer->At - 1);
-    pNode->Type = JS_NUMBER;
-
-    while(pTokenizer->At[0] && pTokenizer->At[0] != ',' && pTokenizer->At[0] != ']' && pTokenizer->At[0] != '}' && !IsWhiteSpace(pTokenizer->At[0]))
-    {
-        ++pTokenizer->At;
-    }
-
-    json_set_data_size(pNode->Size, cast(int, pTokenizer->At - pNode->Value));
-}
-
-static void ParseNull(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
+static void ParseOtherData(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
 {
     pNode->Value = (pTokenizer->At - 1);
     pNode->Type = JS_NULL;
@@ -180,7 +149,8 @@ static void GetFieldData(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
         case 'n'  :
         case 'N'  :
         {
-            ParseNull(pTokenizer, pNode);
+            pNode->Type = JS_NULL;
+            ParseOtherData(pTokenizer, pNode);
         } break;
 
         case 't'  :
@@ -188,7 +158,8 @@ static void GetFieldData(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
         case 'f'  :
         case 'F'  :
         {
-            ParseBool(pTokenizer, pNode);
+            pNode->Type = JS_BOOL;
+            ParseOtherData(pTokenizer, pNode);
         }break;
 
         case '-'  :
@@ -203,7 +174,8 @@ static void GetFieldData(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
         case '8'  :
         case '9'  :
         {
-            ParseNumber(pTokenizer, pNode);
+            pNode->Type = JS_NUMBER;
+            ParseOtherData(pTokenizer, pNode);
         } break;
 
         case '{'  :
@@ -316,7 +288,7 @@ void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer)
 
         case Token_Field:
         {
-            GetFieldName(pTokenizer, pRootNode);
+            ParseFieldName(pTokenizer, pRootNode);
         } break;
 
         case Token_Colon:
@@ -376,4 +348,102 @@ JS_NODE * json_root()
     json_default(pRootNode);
 
     return pRootNode;
+}
+
+static int strcmp(const char* s1, const char* s2)
+{
+    while(*s1 && (*s1 == *s2)) s1++, s2++;
+    return *(const unsigned char *) s1 - *(const unsigned char *) s2;
+}
+
+static JS_NODE * json_find_sibling(JS_NODE *pNode, char *pQuery)
+{
+    while(pNode && strcmp(pQuery, pNode->Name))
+    {
+        pNode = pNode->Sibling;
+    }
+
+    return pNode;
+}
+
+static JS_NODE * json_child_n(JS_NODE *pNode, int i)
+{
+    while(pNode && i--)
+    {
+        pNode = pNode->Sibling;
+    }
+
+    if(pNode != NULL && (pNode->Type == JS_OBJECT) || pNode->Type == JS_ARRAY) return pNode->Childs;
+    return pNode;
+}
+
+static int json_count_siblings(JS_NODE *pNode)
+{
+    int i = 0;
+
+    while(pNode)
+    {
+        pNode = pNode->Sibling;
+        i++;
+    }
+
+    return i;
+}
+
+char * json_value(JS_NODE *pNode, char *pQuery, int *pArray /* = 0 */, int ArrayCount /* = 0 */)
+{
+    char pBlock[32] = { 0 };
+    char *p = pQuery, i = 0;
+
+    while(p && *p && *p != '.')
+    {
+        pBlock[i++] = *p++;
+    }
+
+    JS_NODE *pSibling = json_find_sibling(pNode, pBlock);
+    if(pSibling == NULL) return NULL;
+
+    if(pSibling->Type == JS_OBJECT && *p)
+    {
+        return json_value(pSibling->Childs, ++p, pArray, ArrayCount);
+    }
+    else if(pSibling->Type == JS_ARRAY && *p)
+    {
+        return json_value(json_child_n(pSibling->Childs, pArray[0]), ++p, pArray + 1, ArrayCount - 1);
+    }
+    else
+    {
+        return pSibling->Value;
+    }
+
+    return NULL;
+}
+
+int json_size(JS_NODE *pNode, char *pQuery, int *pArray /* = 0 */, int ArrayCount /* = 0 */)
+{
+    char pBlock[32] = { 0 };
+    char *p = pQuery, i = 0;
+
+    while(p && *p && *p != '.')
+    {
+        pBlock[i++] = *p++;
+    }
+
+    JS_NODE *pSibling = json_find_sibling(pNode, pBlock);
+    if(pSibling == NULL) return 0;
+
+    if(pSibling->Type == JS_OBJECT && *p)
+    {
+        return json_size(pSibling->Childs, ++p, pArray, ArrayCount);
+    }
+    else if(pSibling->Type == JS_ARRAY && *p)
+    {
+        return json_size(json_child_n(pSibling->Childs, pArray[0]), ++p, pArray + 1, ArrayCount - 1);
+    }
+    else
+    {
+        return json_count_siblings(pSibling);
+    }
+
+    return 0;
 }
