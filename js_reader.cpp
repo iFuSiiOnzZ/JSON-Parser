@@ -350,13 +350,13 @@ JS_NODE * json_root()
     return pRootNode;
 }
 
-static int strcmp(const char* s1, const char* s2)
+int strcmp(const char* s1, const char* s2)
 {
     while(*s1 && (*s1 == *s2)) s1++, s2++;
     return *(const unsigned char *) s1 - *(const unsigned char *) s2;
 }
 
-static JS_NODE * json_find_sibling(JS_NODE *pNode, char *pQuery)
+JS_NODE * json_find_sibling(JS_NODE *pNode, char *pQuery)
 {
     while(pNode && strcmp(pQuery, pNode->Name))
     {
@@ -366,7 +366,7 @@ static JS_NODE * json_find_sibling(JS_NODE *pNode, char *pQuery)
     return pNode;
 }
 
-static JS_NODE * json_child_n(JS_NODE *pNode, int i)
+JS_NODE * json_child_n(JS_NODE *pNode, int i)
 {
     while(pNode && i--)
     {
@@ -377,7 +377,7 @@ static JS_NODE * json_child_n(JS_NODE *pNode, int i)
     return pNode;
 }
 
-static int json_count_siblings(JS_NODE *pNode)
+int json_count_siblings(JS_NODE *pNode)
 {
     int i = 0;
 
@@ -405,18 +405,14 @@ char * json_value(JS_NODE *pNode, char *pQuery, int *pArray /* = 0 */, int Array
 
     if(pSibling->Type == JS_OBJECT && *p)
     {
-        return json_value(pSibling->Childs, ++p, pArray, ArrayCount);
+        return json_value(pSibling->Childs, p + 1, pArray, ArrayCount);
     }
     else if(pSibling->Type == JS_ARRAY && *p)
     {
-        return json_value(json_child_n(pSibling->Childs, pArray[0]), ++p, pArray + 1, ArrayCount - 1);
-    }
-    else
-    {
-        return pSibling->Value;
+        return json_value(json_child_n(pSibling->Childs, pArray[0]), p + 1, pArray + 1, ArrayCount - 1);
     }
 
-    return NULL;
+    return pSibling->Value;
 }
 
 int json_size(JS_NODE *pNode, char *pQuery, int *pArray /* = 0 */, int ArrayCount /* = 0 */)
@@ -434,16 +430,12 @@ int json_size(JS_NODE *pNode, char *pQuery, int *pArray /* = 0 */, int ArrayCoun
 
     if(pSibling->Type == JS_OBJECT && *p)
     {
-        return json_size(pSibling->Childs, ++p, pArray, ArrayCount);
+        return json_size(pSibling->Childs, p + 1, pArray, ArrayCount);
     }
     else if(pSibling->Type == JS_ARRAY && *p)
     {
-        return json_size(json_child_n(pSibling->Childs, pArray[0]), ++p, pArray + 1, ArrayCount - 1);
-    }
-    else
-    {
-        return json_count_siblings(pSibling);
+        return json_size(json_child_n(pSibling->Childs, pArray[0]), p + 1, pArray + 1, ArrayCount - 1);
     }
 
-    return 0;
+    return json_count_siblings((pSibling->Type == JS_ARRAY) ? pSibling->Childs : pSibling);
 }
