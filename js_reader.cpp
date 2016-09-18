@@ -127,6 +127,7 @@ static void ParseString(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
 
     while(pTokenizer->At[0] != '\0' && pTokenizer->At[0] != '"')
     {
+        if(pTokenizer->At[0] == '\\') ++pTokenizer->At;
         ++pTokenizer->At;
     }
 
