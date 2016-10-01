@@ -39,7 +39,7 @@ typedef struct JS_TOKENIZER
     char *At;
 } JS_TOKENIZER;
 
-void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer);
+void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer, int inArray = 0);
 void json_clear(JS_NODE *pNode);
 
 void json_sanitize(JS_NODE * pNode);

@@ -110,7 +110,7 @@ static void ParseFieldName(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
 static void ParseOtherData(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
 {
     pNode->Value = (pTokenizer->At - 1);
-    pNode->Type = JS_NULL;
+    pNode->Type = JS_UNDEFINED;
 
     while(pTokenizer->At[0] && pTokenizer->At[0] != ',' && pTokenizer->At[0] != ']' && pTokenizer->At[0] != '}' && !IsWhiteSpace(pTokenizer->At[0]))
     {
@@ -127,6 +127,7 @@ static void ParseString(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
 
     while(pTokenizer->At[0] != '\0' && pTokenizer->At[0] != '"')
     {
+        if(pTokenizer->At[0] == '\\') ++pTokenizer->At;
         ++pTokenizer->At;
     }
 
@@ -149,8 +150,8 @@ static void GetFieldData(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
         case 'n'  :
         case 'N'  :
         {
-            pNode->Type = JS_NULL;
             ParseOtherData(pTokenizer, pNode);
+            pNode->Type = JS_NULL;
         } break;
 
         case 't'  :
@@ -158,8 +159,8 @@ static void GetFieldData(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
         case 'f'  :
         case 'F'  :
         {
-            pNode->Type = JS_BOOL;
             ParseOtherData(pTokenizer, pNode);
+            pNode->Type = JS_BOOL;
         }break;
 
         case '-'  :
@@ -174,8 +175,8 @@ static void GetFieldData(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
         case '8'  :
         case '9'  :
         {
-            pNode->Type = JS_NUMBER;
             ParseOtherData(pTokenizer, pNode);
+            pNode->Type = JS_NUMBER;
         } break;
 
         case '{'  :
@@ -230,7 +231,7 @@ static JS_NODE * pop()
     return pDataNode;
 }
 
-void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer)
+void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer, int inArray)
 {
     RemoveSpace(pTokenizer);
     JS_TOKEN Token = GetToken(pTokenizer);
@@ -245,37 +246,23 @@ void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer)
         case Token_CloseBraket: case Token_CloseBrace:
         {
              pRootNode = pop();
+             if(pRootNode->Type == JS_ARRAY) inArray = 0;
         } break;
 
-        case Token_OpenBrace:
+        case Token_OpenBrace: case Token_OpenBraket:
         {
             if(pRootNode->Type == JS_UNDEFINED)
             {
                 pRootNode->Name = DefaultName;
             }
 
-            pRootNode->Type = JS_OBJECT;
+            pRootNode->Type = Token.Type == Token_OpenBraket ? JS_ARRAY : JS_OBJECT;
             pRootNode->Childs = (JS_NODE *) malloc (sizeof(JS_NODE));
 
             push(pRootNode);
             json_default(pRootNode->Childs);
 
-            pRootNode = pRootNode->Childs;
-        } break;
-
-        case Token_OpenBraket:
-        {
-            if(pRootNode->Type == JS_UNDEFINED)
-            {
-                pRootNode->Name = DefaultName;
-            }
-
-            pRootNode->Type = JS_ARRAY;
-            pRootNode->Childs = (JS_NODE *) malloc (sizeof(JS_NODE));
-
-            push(pRootNode);
-            json_default(pRootNode->Childs);
-
+            inArray = pRootNode->Type == JS_ARRAY;
             pRootNode = pRootNode->Childs;
         } break;
 
@@ -288,7 +275,8 @@ void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer)
 
         case Token_Field:
         {
-            ParseFieldName(pTokenizer, pRootNode);
+            if(inArray) --pTokenizer->At, GetFieldData(pTokenizer, pRootNode);
+            else ParseFieldName(pTokenizer, pRootNode);
         } break;
 
         case Token_Colon:
@@ -303,7 +291,7 @@ void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer)
         } break;
     }
 
-    json_parser(pRootNode, pTokenizer);
+    json_parser(pRootNode, pTokenizer, inArray);
 }
 
 void json_clear(JS_NODE *pNode)
@@ -316,18 +304,43 @@ void json_clear(JS_NODE *pNode)
     free(pNode);
 }
 
-void json_sanitize(JS_NODE * pNode)
+static void json_sanitize_end_of_string(JS_NODE * pNode)
 {
-    if(pNode == NULL) return;
+    if (pNode == NULL) return;
 
-    json_sanitize(pNode->Childs);
-    json_sanitize(pNode->Sibling);
+    json_sanitize_end_of_string(pNode->Childs);
+    json_sanitize_end_of_string(pNode->Sibling);
 
     int n = json_get_name_size(pNode->Size);
     int v = json_get_data_size(pNode->Size);
 
-    if(n) pNode->Name[n] = 0;
-    if(v) pNode->Value[v] = 0;
+    if (n) pNode->Name[n] = 0;
+    if (v) pNode->Value[v] = 0;
+}
+
+static void json_sanitize_special_chars(JS_NODE * pNode)
+{
+    if (pNode == NULL) return;
+
+    json_sanitize_special_chars(pNode->Childs);
+    json_sanitize_special_chars(pNode->Sibling);
+
+    char *r = pNode->Value;
+    char *w = r;
+
+    while (r && *r)
+    {
+        if (*r == '\\') ++r; // NOTE(Andrei): Should we also check the next character?
+        *w++ = *r++;
+    }
+
+    if(w) *w = 0;
+}
+
+void json_sanitize(JS_NODE * pNode)
+{
+    json_sanitize_end_of_string(pNode);
+    json_sanitize_special_chars(pNode);
 }
 
 void json_default(JS_NODE *pNode)
@@ -352,7 +365,7 @@ JS_NODE * json_root()
 
 int strcmp(const char* s1, const char* s2)
 {
-    while(*s1 && (*s1 == *s2)) s1++, s2++;
+    while (*s1 && (*s1 == *s2)) s1++, s2++;
     return *(const unsigned char *) s1 - *(const unsigned char *) s2;
 }
 
@@ -412,7 +425,7 @@ char * json_value(JS_NODE *pNode, char *pQuery, int *pArray /* = 0 */, int Array
         return json_value(json_child_n(pSibling->Childs, pArray[0]), p + 1, pArray + 1, ArrayCount - 1);
     }
 
-    return pSibling->Value;
+    return pSibling->Type == JS_ARRAY ? json_child_n(pSibling->Childs, pArray[0])->Value : pSibling->Value;
 }
 
 int json_size(JS_NODE *pNode, char *pQuery, int *pArray /* = 0 */, int ArrayCount /* = 0 */)
