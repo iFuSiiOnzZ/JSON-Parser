@@ -58,40 +58,14 @@ int main(int argc, char *argv[])
     UNUSED(argc); UNUSED(argv);
 
     //http://json-schema.org/example2.html (/etc/fstab)
-    char *pFileContent =  LoadInMemory("json_test_1.json");
+    char *pFileContent =  LoadInMemory("json_test_2.json");
     JS_TOKENIZER Tokenizer = { pFileContent };
 
     JS_NODE *pRootNode = json_root();
     json_parser(pRootNode, &Tokenizer);
 
     json_sanitize(pRootNode);
-    int pArray[1] = { 0 };
-
-    test_check(pRootNode, "root./.storage.type", "disk");
-    test_check(pRootNode, "root./.storage.device", "/dev/sda1");
-    test_check(pRootNode, "root./.fstype", "btrfs");
-    test_check(pRootNode, "root./.readonly", "true");
-
-    printf("%s\n", "==============================");
-
-    test_check(pRootNode, "root./var.storage.type", "disk");
-    test_check(pRootNode, "root./var.storage.label", "8f3ba6f4-5c70-46ec-83af-0d5434953e5f");
-    test_check(pRootNode, "root./var.fstype", "ext4");
-    test_check(pRootNode, "root./var.options", "nosuid", pArray, 1);
-
-    printf("%s\n", "==============================");
-
-    test_check(pRootNode, "root./tmp.storage.type", "tmpfs");
-    test_check(pRootNode, "root./tmp.storage.sizeInMB", "64");
-
-    printf("%s\n", "==============================");
-
-    test_check(pRootNode, "root./var/www.storage.type", "nfs");
-    test_check(pRootNode, "root./var/www.storage.server", "my.nfs.server");
-    test_check(pRootNode, "root./var/www.storage.remotePath", "/exports/mypath");
-
-    printf("%s\n", "==============================");
-    printf("%.02f%% %s\n", (g_NumTestsOK * 100.0f / g_NumTests), " of the tests where OK");
+    json_print(pRootNode);
 
     json_clear(pRootNode);
     free(pFileContent);

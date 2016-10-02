@@ -39,13 +39,14 @@ typedef struct JS_TOKENIZER
     char *At;
 } JS_TOKENIZER;
 
-void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer, int inArray = 0);
+void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer);
 void json_clear(JS_NODE *pNode);
 
 void json_sanitize(JS_NODE * pNode);
 void json_default(JS_NODE *pNode);
 
 JS_NODE * json_root();
+void json_print(JS_NODE *pNode);
 
 char * json_value(JS_NODE *pNode, char *pQuery, int *pArray = 0, int ArrayCount = 0);
 int json_size(JS_NODE *pNode, char *pQuery, int *pArray = 0, int ArrayCount = 0);

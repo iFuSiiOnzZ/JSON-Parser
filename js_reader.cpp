@@ -32,6 +32,7 @@ typedef struct queue_t      // NOTE(Andrei): This is used to store the current j
 {                           // if we found and array or an object we push the actual json node to queue,
     struct queue_t *Prev;   // this way when we end parsing the structure we came back to node where we
     JS_NODE *Data;          // were before parsing the structure
+    int inArray;
 } queue_t;
 
 inline bool IsEndOfLine(char C)
@@ -196,102 +197,105 @@ static void GetFieldData(JS_TOKENIZER *pTokenizer, JS_NODE *pNode)
     }
 }
 
-static queue_t *g_Queue = NULL;
-
-static void push(JS_NODE *pNode)
+static void push(queue_t **pQueue, JS_NODE *pNode, int inArray)
 {
-    if(g_Queue == NULL)
+    if(*pQueue == NULL)
     {
-        g_Queue = (queue_t *) malloc (sizeof(queue_t));
-        g_Queue->Prev = NULL;
+        *pQueue = (queue_t *) malloc (sizeof(queue_t));
+        (*pQueue)->Prev = NULL;
     }
     else
     {
         queue_t *pNewNode = (queue_t *) malloc (sizeof(queue_t));
-        pNewNode->Prev = g_Queue;
-        g_Queue = pNewNode;
+        pNewNode->Prev = *pQueue;
+        *pQueue = pNewNode;
     }
 
-    g_Queue->Data = pNode;
+    (*pQueue)->inArray = inArray;
+    (*pQueue)->Data = pNode;
 }
 
-static JS_NODE * pop()
+static JS_NODE * pop(queue_t **pQueue, int *inArray)
 {
-    if(g_Queue == NULL)
+    if(*pQueue == NULL)
     {
         return NULL;
     }
 
-    JS_NODE *pDataNode = g_Queue->Data;
-    queue_t *pQueueNode = g_Queue;
+    JS_NODE *pDataNode = (*pQueue)->Data;
+    queue_t *pQueueNode = *pQueue;
 
-    g_Queue = g_Queue->Prev;
+    *inArray = pQueueNode->inArray;
+    *pQueue = (*pQueue)->Prev;
+
     free(pQueueNode);
-
     return pDataNode;
 }
 
-void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer, int inArray)
+void json_parser(JS_NODE *pRootNode, JS_TOKENIZER *pTokenizer)
 {
-    RemoveSpace(pTokenizer);
-    JS_TOKEN Token = GetToken(pTokenizer);
+    int inArray = 0;
+    queue_t *pQueue = NULL;
 
-    switch(Token.Type)
+    while(true)
     {
-        case Token_EndOfStream:
-        {
-            return;
-        } break;
+        RemoveSpace(pTokenizer);
+        JS_TOKEN Token = GetToken(pTokenizer);
 
-        case Token_CloseBraket: case Token_CloseBrace:
+        switch(Token.Type)
         {
-             pRootNode = pop();
-             if(pRootNode->Type == JS_ARRAY) inArray = 0;
-        } break;
-
-        case Token_OpenBrace: case Token_OpenBraket:
-        {
-            if(pRootNode->Type == JS_UNDEFINED)
+            case Token_EndOfStream:
             {
-                pRootNode->Name = DefaultName;
-            }
+                return;
+            } break;
 
-            pRootNode->Type = Token.Type == Token_OpenBraket ? JS_ARRAY : JS_OBJECT;
-            pRootNode->Childs = (JS_NODE *) malloc (sizeof(JS_NODE));
+            case Token_CloseBraket: case Token_CloseBrace:
+            {
+                pRootNode = pop(&pQueue, &inArray);
+            } break;
 
-            push(pRootNode);
-            json_default(pRootNode->Childs);
+            case Token_OpenBrace: case Token_OpenBraket:
+            {
+                if(pRootNode->Type == JS_UNDEFINED)
+                {
+                    pRootNode->Name = DefaultName;
+                }
 
-            inArray = pRootNode->Type == JS_ARRAY;
-            pRootNode = pRootNode->Childs;
-        } break;
+                pRootNode->Type = Token.Type == Token_OpenBraket ? JS_ARRAY : JS_OBJECT;
+                pRootNode->Childs = (JS_NODE *) malloc (sizeof(JS_NODE));
 
-        case Token_Comma:
-        {
-            pRootNode->Sibling = (JS_NODE *) malloc (sizeof(JS_NODE));
-            json_default(pRootNode->Sibling);
-            pRootNode = pRootNode->Sibling;
-        } break;
+                push(&pQueue, pRootNode, inArray);
+                inArray = pRootNode->Type == JS_ARRAY;
 
-        case Token_Field:
-        {
-            if(inArray) --pTokenizer->At, GetFieldData(pTokenizer, pRootNode);
-            else ParseFieldName(pTokenizer, pRootNode);
-        } break;
+                json_default(pRootNode->Childs);
+                pRootNode = pRootNode->Childs;
+            } break;
 
-        case Token_Colon:
-        {
-            GetFieldData(pTokenizer, pRootNode);
-        } break;
+            case Token_Comma:
+            {
+                pRootNode->Sibling = (JS_NODE *) malloc (sizeof(JS_NODE));
+                json_default(pRootNode->Sibling);
+                pRootNode = pRootNode->Sibling;
+            } break;
 
-        default:
-        {
-            --pTokenizer->At;
-            GetFieldData(pTokenizer, pRootNode);
-        } break;
+            case Token_Field:
+            {
+                if(inArray) --pTokenizer->At, GetFieldData(pTokenizer, pRootNode);
+                else ParseFieldName(pTokenizer, pRootNode);
+            } break;
+
+            case Token_Colon:
+            {
+                GetFieldData(pTokenizer, pRootNode);
+            } break;
+
+            default:
+            {
+                --pTokenizer->At;
+                GetFieldData(pTokenizer, pRootNode);
+            } break;
+        }
     }
-
-    json_parser(pRootNode, pTokenizer, inArray);
 }
 
 void json_clear(JS_NODE *pNode)
@@ -451,4 +455,54 @@ int json_size(JS_NODE *pNode, char *pQuery, int *pArray /* = 0 */, int ArrayCoun
     }
 
     return json_count_siblings((pSibling->Type == JS_ARRAY) ? pSibling->Childs : pSibling);
+}
+
+static void json_print_internal(JS_NODE *pNode, char *pNodeName, JS_TYPES jNodeType, int NodeHasSiblings, int Level)
+{
+    if(jNodeType == JS_ARRAY && pNodeName)
+    {
+        if(strcmp(pNodeName, "root")) printf("%*s\"%s\" :\n", 4 * Level, " ", pNodeName);
+        printf("%*s%s\n", 4 * Level, " ", "[");
+    }
+    else if(jNodeType == JS_OBJECT && pNodeName)
+    {
+        if(strcmp(pNodeName, "root"))printf("%*s\"%s\" :\n", 4 * Level, " ", pNodeName);
+        printf("%*s%s\n", 4 * Level, " ", "{");
+    }
+
+    while(pNode)
+    {
+        JS_NODE *isNoLastSibling = pNode->Sibling;
+
+        if(pNode->Type == JS_OBJECT || pNode->Type == JS_ARRAY) 
+        {
+            json_print_internal(pNode->Childs, pNode->Name, pNode->Type, pNode->Sibling != NULL, Level + 1);
+             pNode = pNode->Sibling; continue;
+        }
+
+        printf("%*s", 4 + 4 * Level, " ");
+        if(pNode->Name) printf("\"%s\" : ", pNode->Name);
+
+        if(pNode->Type == JS_STRING) printf("\"%s\"", pNode->Value);
+        else printf("%s", pNode->Value);
+
+        printf("%s\n", isNoLastSibling ? "," : "");
+        pNode = pNode->Sibling;
+    }
+
+    if(jNodeType == JS_ARRAY && pNodeName)
+    {
+        printf("%*s%s", 4 * Level, " ", "]");
+        printf("%s\n", NodeHasSiblings ? "," : "");
+    }
+    else if(jNodeType == JS_OBJECT && pNodeName)
+    {
+        printf("%*s%s", 4 * Level, " ", "}");
+        printf("%s\n", NodeHasSiblings ? "," : "");
+    }
+}
+
+void json_print(JS_NODE *pNode)
+{
+    json_print_internal(pNode, NULL, JS_UNDEFINED, pNode->Sibling != NULL, -1);
 }
